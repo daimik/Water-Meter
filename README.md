@@ -429,9 +429,9 @@ water damage, or any other issues arising from use of this project.
 
 ---
 
-**Version**: 1.0.0
-**Last Updated**: 2026-02-22
-**Firmware**: ESPHome 2024.x compatible
-**Board**: Seeed XIAO ESP32C6
+**Version**: 1.0.0  
+**Last Updated**: 2026-02-22  
+**Firmware**: ESPHome 2024.x compatible  
+**Board**: Seeed XIAO ESP32C6  
 
 **Made with ❤️ and 💧**
