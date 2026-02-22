@@ -19,6 +19,16 @@ This project turns an **Elster V200 volumetric water meter** into a smart IoT de
 
 ---
 
+## 📁 Repository Files
+
+| File | Description |
+|------|-------------|
+| `water-meter.yaml` | ESPHome firmware configuration — flash this to your XIAO ESP32C6 |
+| `Bracket_Elster_V200.stl` | 3D printable sensor bracket for Elster V200 — original model by [Thingiverse thing:5515823](https://www.thingiverse.com/thing:5515823), not my design |
+| `README.md` | This file |
+
+---
+
 ## 📦 Hardware
 
 ### Shopping List
@@ -70,7 +80,9 @@ This brings the 5V signal down to ~3.1V which is safe for the ESP32C6.
 
 ### 🖨️ Sensor Bracket (3D Print)
 
-A purpose-built bracket for mounting the LJ18A3-8-Z/BX-5V on an **Elster V200** water meter is available on Thingiverse: [thing:5515823](https://www.thingiverse.com/thing:5515823)
+The file `Bracket_Elster_V200.stl` included in this repo is a 3D printable bracket for mounting the LJ18A3-8-Z/BX-5V on an **Elster V200** water meter.
+
+> **Credit:** This bracket was **not designed by me**. Original model by the Thingiverse community — [thing:5515823](https://www.thingiverse.com/thing:5515823). All credit goes to the original author. Please check the Thingiverse page for license terms before using commercially.
 
 - Designed specifically for the Elster V200
 - **M18×1 thread** matches the sensor body exactly — no tapping needed
@@ -318,6 +330,19 @@ wifi_password: "YourWiFiPassword"
 esphome run water-meter.yaml
 ```
 
+### Step 2b: Print the bracket
+
+Print `Bracket_Elster_V200.stl` with these recommended settings:
+
+| Setting | Value |
+|---------|-------|
+| **Material** | PETG or ASA (water resistant) |
+| **Layer height** | 0.2mm |
+| **Infill** | 40%+ |
+| **Supports** | Not needed |
+
+Mount with 2× M4 bolts to the Elster V200, insert sensor and tighten the M18×1 locking nut until the sensor LED reliably triggers on each disk rotation.
+
 ### Step 3: Add to Home Assistant
 
 1. Go to **Settings → Devices & Services**
@@ -340,6 +365,7 @@ esphome run water-meter.yaml
 - Verify sensor wire colors (Brown=5V, Blue=GND, Black=Signal)
 - Check sensor LED indicator — it should light up when the metal target passes
 - Confirm GPIO17 in config matches your actual wiring
+- Check sensor distance — LJ18A3 has 8mm sensing range, use the locking nut on the bracket to fine-tune position
 
 ### Double counting / extra pulses
 - Increase debounce: change `delayed_on: 500ms` and `delayed_off: 500ms`
