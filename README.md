@@ -90,6 +90,9 @@ The file `Bracket_Elster_V200.stl` included in this repo is a 3D printable brack
 - Two M4 bolts fix the bracket to the meter
 - Minimalistic design so you can still manually read the meter
 
+> **Don't have an Elster V200?** There is a more flexible universal bracket design that fits a wider range of water meters: [thingiverse.com/thing:5230871](https://www.thingiverse.com/thing:5230871)
+> ⚠️ **Note:** That particular model appears to be designed for a smaller sensor diameter and likely won't fit the M18 body of the LJ18A3 we use here. The idea is clear though — Thingiverse has many proximity sensor brackets for various water meters. Just make sure whatever model you pick is designed for an **M18 sensor** before printing.
+
 ### Antenna
 
 The XIAO ESP32C6 has an onboard RF switch for antenna selection. The firmware automatically enables the external antenna at boot via GPIO3 and GPIO14. Simply plug the uFL antenna into the connector on the board.
