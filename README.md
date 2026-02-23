@@ -66,7 +66,7 @@ This project turns an **Elster V200 volumetric water meter** into a smart IoT de
 
 ### ⚠️ Signal Wiring Note
 
-The LJ18A3-8-Z/BX operates on **6-36V DC** (powered from 12V or any supply in that range). The signal wire can still be connected **directly to GPIO17** — no voltage divider needed.
+The LJ18A3-8-Z/BX is powered from **5V**. The signal wire can be connected directly to GPIO17 — no voltage divider needed.
 
 **When the sensor is inactive (no metal detected):**
 - NPN output is open (floating)
