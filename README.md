@@ -217,18 +217,34 @@ All period counters reset automatically via Home Assistant time sync:
 
 ## 🚨 Leak Detection
 
-The leak detection system monitors for **continuous uninterrupted water flow**:
+The leak detection system monitors for **continuous uninterrupted water flow** — meaning flow with **no breaks at all** for the full threshold duration.
 
 ```
-Normal use:   ██░░░░░██░░░░░██░░░░░  (flow with gaps = OK)
-Leak:         ████████████████████  (continuous flow = ALERT)
+Shower (15 min) + pause → counter resets → no alert ✅
+Laundry (90 min) + pause → counter resets → no alert ✅
+Genuine leak running all day → counter never resets → ALERT 🚨
 ```
 
+**Key point:** Any stop in flow, even for just one minute, resets the counter back to zero. So normal household use — no matter how long — will never trigger the alert as long as there is at least one break. The alert only fires if water flows **without any pause** for the full threshold duration.
+
+How it works:
 1. Flow rate is checked every 60 seconds
 2. Counter increments for each minute with flow > 0
-3. Counter resets to 0 when flow stops
-4. Alert fires when counter reaches threshold (default 60 minutes)
+3. **Counter resets within 60 seconds of flow stopping** — the flow rate is checked every 60s, so any pause of at least 1 minute resets the counter
+4. Alert fires only when counter reaches threshold with zero breaks (default 240 minutes)
 5. Alert clears automatically when flow stops
+
+**Default threshold is 240 minutes (4 hours).** Typical household activities for reference:
+
+| Activity | Duration |
+|---|---|
+| Shower | ~15 min |
+| Bath | ~30 min |
+| Washing machine | ~90 min |
+| Filling a large tank | several hours |
+| Genuine leak (dripping tap, burst pipe) | runs indefinitely |
+
+Adjust the threshold via the **Leak Detection Threshold** setting in HA to suit your household habits.
 
 ### Home Assistant Automation Example
 
@@ -243,7 +259,7 @@ automation:
       - service: notify.mobile_app
         data:
           title: "⚠️ Water Leak Detected!"
-          message: "Continuous water flow detected for over 60 minutes."
+          message: "Continuous water flow detected for over 4 hours with no breaks."
 ```
 
 ---
@@ -396,7 +412,7 @@ Mount with 2× M4 bolts to the Elster V200, insert sensor and tighten the M18×1
 - Try full erase and reflash: `esphome run --device PORT water-meter.yaml`
 
 ### Leak alert firing incorrectly
-- Increase the **Leak Detection Threshold** (default 60 min) via HA
+- Increase the **Leak Detection Threshold** (default 240 min) via HA
 - Check if there is genuinely a slow leak (dripping tap, running toilet)
 - Use **Reset Leak Alert** button to clear after investigating
 
