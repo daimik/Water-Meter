@@ -37,7 +37,7 @@ This project turns an **Elster V200 volumetric water meter** into a smart IoT de
 |-----------|----------|-------|-------|
 | **Seeed XIAO ESP32C6** | Kiwi Electronics | ~€6 | [Link](https://www.kiwi-electronics.com/nl/seeed-studio-xiao-esp32c6-20076) |
 | **2.4GHz WiFi Antenna (uFL)** | Kiwi Electronics | ~€3 | [Link](https://www.kiwi-electronics.com/nl/2-4ghz-mini-flexibele-wifi-antenne-met-ufl-connector-11062) |
-| **LJ18A3-8-Z/BX-5V Proximity Sensor** | AliExpress | ~€2-3 | NPN NO, 8mm, M18, 5V — [Link](https://nl.aliexpress.com/item/1005004537279157.html) |
+| **LJ18A3-8-Z/BX Proximity Sensor** | AliExpress | ~€2-3 | NPN NO, 8mm, M18, 6-36V DC — [Link](https://nl.aliexpress.com/item/1005004537279157.html) |
 | **Sensor Bracket (3D print)** | Thingiverse | Free | M18×1 thread, fits Elster V200 — [Link](https://www.thingiverse.com/thing:5515823) |
 | **Voltage Divider Resistors** | Local/AliExpress | <€1 | 10kΩ + 6.8kΩ |
 | **2× M4 bolts** | Hardware store | <€1 | To mount bracket on Elster V200 |
@@ -61,22 +61,32 @@ This project turns an **Elster V200 volumetric water meter** into a smart IoT de
 | Sensor Wire | Color | Connect To |
 |-------------|-------|------------|
 | Power | Brown | 5V |
-| Ground | Blue | GND |
-| Signal | Black | Voltage divider → GPIO17 (D7) |
+| Ground | Blue | GND (shared with ESP32) |
+| Signal | Black | GPIO17 (D7) directly — no level shifting needed |
 
-### ⚠️ Voltage Divider (REQUIRED)
+### ⚠️ Signal Wiring Note
 
-The LJ18A3-8-Z/BX-5V sensor outputs **5V logic** but the XIAO ESP32C6 GPIO pins are **3.3V only**. A voltage divider is required on the signal wire:
+The LJ18A3-8-Z/BX operates on **6-36V DC** (powered from 12V or any supply in that range). The signal wire can still be connected **directly to GPIO17** — no voltage divider needed.
 
-```
-Sensor Black ──→ 10kΩ ──→ GPIO17
-                           │
-                          6.8kΩ
-                           │
-                          GND
-```
+**When the sensor is inactive (no metal detected):**
+- NPN output is open (floating)
+- Internal pull-up holds GPIO17 at 3.3V
+- Pin sees **3.3V** ✅
 
-This brings the 5V signal down to ~3.1V which is safe for the ESP32C6.
+**When the sensor is active (metal detected):**
+- NPN pulls output to GND through its internal transistor
+- 10kΩ series resistor and internal ~45kΩ pull-up form a divider
+- Pin voltage ≈ 3.3V × (10k / (45k + 10k)) ≈ **0.6V**
+- ESP32 reads this as LOW ✅
+
+The NPN output only pulls the signal line to GND when active — it never pushes the supply voltage (6-36V) onto the GPIO pin. The pin only ever sees 3.3V or ~0.6V, both perfectly safe for the ESP32C6.
+
+| Sensor State | GPIO17 Voltage | ESP32 reads |
+|---|---|---|
+| Inactive (no metal) | 3.3V | HIGH |
+| Active (metal detected) | ~0.6V | LOW |
+
+A 10kΩ resistor in series between sensor and GPIO is optional and harmless if you want extra peace of mind, but not required.
 
 ### 🖨️ Sensor Bracket (3D Print)
 
@@ -364,7 +374,6 @@ Mount with 2× M4 bolts to the Elster V200, insert sensor and tighten the M18×1
 ## 🔧 Troubleshooting
 
 ### Pulses not counting
-- Check voltage divider wiring — 5V signal without divider will damage GPIO
 - Verify sensor wire colors (Brown=5V, Blue=GND, Black=Signal)
 - Check sensor LED indicator — it should light up when the metal target passes
 - Confirm GPIO17 in config matches your actual wiring
@@ -397,12 +406,14 @@ Mount with 2× M4 bolts to the Elster V200, insert sensor and tighten the M18×1
 
 | Parameter | Value |
 |-----------|-------|
-| **Sensor Type** | LJ18A3-8-Z/BX-5V NPN NO proximity |
+| **Sensor Type** | LJ18A3-8-Z/BX NPN NO proximity |
 | **Sensor Thread** | M18×1 |
-| **Sensing Range** | 8mm |
-| **Sensor Voltage** | 5V |
+| **Sensing Range** | 8mm (±10%) |
+| **Sensor Supply Voltage** | 6-36V DC |
+| **Output Current (max)** | 200mA |
+| **Response Frequency** | 0.5kHz DC |
 | **Target Meter** | Elster V200 volumetric water meter |
-| **Signal Logic** | 5V → 3.3V via voltage divider |
+| **Signal Logic** | Direct connection — NPN never pushes 5V onto GPIO |
 | **Pulse Detection** | Hardware interrupt (GPIO binary sensor) |
 | **Debounce** | 500ms on / 500ms off |
 | **Flow Rate Update** | Every 60 seconds |
