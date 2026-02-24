@@ -64,30 +64,6 @@ This project turns an **Elster V200 volumetric water meter** into a smart IoT de
 | Ground | Blue | GND (shared with ESP32) |
 | Signal | Black | GPIO17 (D7) directly — no level shifting needed |
 
-### ⚠️ Signal Wiring Note
-
-The LJ18A3-8-Z/BX is powered from **5V**. The signal wire can be connected directly to GPIO17 — no voltage divider needed.
-
-**When the sensor is inactive (no metal detected):**
-- NPN output is open (floating)
-- Internal pull-up holds GPIO17 at 3.3V
-- Pin sees **3.3V** ✅
-
-**When the sensor is active (metal detected):**
-- NPN pulls output to GND through its internal transistor
-- 10kΩ series resistor and internal ~45kΩ pull-up form a divider
-- Pin voltage ≈ 3.3V × (10k / (45k + 10k)) ≈ **0.6V**
-- ESP32 reads this as LOW ✅
-
-The NPN output only pulls the signal line to GND when active — it never pushes the supply voltage (6-36V) onto the GPIO pin. The pin only ever sees 3.3V or ~0.6V, both perfectly safe for the ESP32C6.
-
-| Sensor State | GPIO17 Voltage | ESP32 reads |
-|---|---|---|
-| Inactive (no metal) | 3.3V | HIGH |
-| Active (metal detected) | ~0.6V | LOW |
-
-A 10kΩ resistor in series between sensor and GPIO is optional and harmless if you want extra peace of mind, but not required.
-
 ### 🖨️ Sensor Bracket (3D Print)
 
 The file `Bracket_Elster_V200.stl` included in this repo is a 3D printable bracket for mounting the LJ18A3-8-Z/BX-5V on an **Elster V200** water meter.
