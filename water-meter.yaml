@@ -1,0 +1,454 @@
+esphome:
+  name: water-meter
+  friendly_name: Water Meter
+  platformio_options:
+    build_flags:
+      - "-Wno-cpp"
+  on_boot:
+    - priority: 800
+      then:
+        - lambda: |-
+            #include "driver/gpio.h"
+            gpio_reset_pin(GPIO_NUM_3);
+            gpio_set_direction(GPIO_NUM_3, GPIO_MODE_OUTPUT);
+            gpio_set_level(GPIO_NUM_3, 0);
+            vTaskDelay(pdMS_TO_TICKS(10));
+            gpio_reset_pin(GPIO_NUM_14);
+            gpio_set_direction(GPIO_NUM_14, GPIO_MODE_OUTPUT);
+            gpio_set_level(GPIO_NUM_14, 1);
+            ESP_LOGI("antenna", "External antenna enabled (GPIO3=LOW, GPIO14=HIGH)");
+
+esp32:
+  board: esp32-c6-devkitc-1
+  variant: esp32c6
+  framework:
+    type: esp-idf
+
+logger:
+
+api:
+  encryption:
+    key: "change_me"
+
+ota:
+  - platform: esphome
+    password: "change_me"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  fast_connect: true                # Skip scanning, connect directly — faster reconnect
+  reboot_timeout: 10min             # Reboot if no WiFi for 10 min — clears any stuck state
+#  ap:
+#    ssid: "Water-Meter Fallback Hotspot"
+#    password: "change_me"
+
+captive_portal:
+
+# Web interface
+web_server:
+  port: 80
+  version: 3
+  local: true
+
+# Time sync from Home Assistant for period resets
+time:
+  - platform: homeassistant
+    id: ha_time
+    on_time:
+      # Reset daily at midnight
+      - seconds: 0
+        minutes: 0
+        hours: 0
+        then:
+          - lambda: |-
+              id(usage_today) = 0;
+              id(sensor_usage_today).publish_state(0);
+              ESP_LOGI("watermeter", "Daily usage reset");
+      # Reset weekly on Monday midnight
+      - seconds: 0
+        minutes: 0
+        hours: 0
+        days_of_week: MON
+        then:
+          - lambda: |-
+              id(usage_week) = 0;
+              id(sensor_usage_week).publish_state(0);
+              ESP_LOGI("watermeter", "Weekly usage reset");
+      # Reset monthly on 1st at midnight
+      - seconds: 0
+        minutes: 0
+        hours: 0
+        days_of_month: 1
+        then:
+          - lambda: |-
+              id(usage_month) = 0;
+              id(sensor_usage_month).publish_state(0);
+              ESP_LOGI("watermeter", "Monthly usage reset");
+      # Reset yearly on Jan 1st
+      - seconds: 0
+        minutes: 0
+        hours: 0
+        days_of_month: 1
+        months: JAN
+        then:
+          - lambda: |-
+              id(usage_year) = 0;
+              id(sensor_usage_year).publish_state(0);
+              ESP_LOGI("watermeter", "Yearly usage reset");
+
+globals:
+  # Core meter
+  - id: watermeter_value
+    type: float
+    restore_value: true
+    initial_value: '0'
+  - id: watermeter_factor       # Liters per pulse (calculated from user settings)
+    type: float
+    restore_value: true
+    initial_value: '1'
+  - id: pulse_count_total
+    type: int
+    restore_value: true
+    initial_value: '0'
+  - id: pulse_count_interval
+    type: int
+    restore_value: false
+    initial_value: '0'
+
+  # Usage periods (survive reboot)
+  - id: usage_today
+    type: float
+    restore_value: true
+    initial_value: '0'
+  - id: usage_week
+    type: float
+    restore_value: true
+    initial_value: '0'
+  - id: usage_month
+    type: float
+    restore_value: true
+    initial_value: '0'
+  - id: usage_year
+    type: float
+    restore_value: true
+    initial_value: '0'
+
+  # Peak flow
+  - id: peak_flow
+    type: float
+    restore_value: true
+    initial_value: '0'
+
+  # Leak detection
+  - id: leak_minutes_flowing
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: leak_detected
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO17
+      mode:
+        input: true
+        pullup: true
+    id: proximity_raw
+    name: "Proximity Pulse"
+    internal: true
+    filters:
+      - delayed_on: 500ms     # Must stay ON for 500ms before counted — ignores short noise spikes
+      - delayed_off: 500ms    # Must stay OFF for 500ms before ready for next pulse
+    on_press:
+      then:
+        - lambda: |-
+            float liters = id(watermeter_factor);
+            id(pulse_count_total) += 1;
+            id(pulse_count_interval) += 1;
+            id(watermeter_value) += liters;
+
+            id(usage_today) += liters;
+            id(usage_week) += liters;
+            id(usage_month) += liters;
+            id(usage_year) += liters;
+
+            id(sensor_watermeter_value).publish_state(id(watermeter_value));
+            id(sensor_pulse_count).publish_state(id(pulse_count_total));
+            id(sensor_usage_today).publish_state(id(usage_today));
+            id(sensor_usage_week).publish_state(id(usage_week));
+            id(sensor_usage_month).publish_state(id(usage_month));
+            id(sensor_usage_year).publish_state(id(usage_year));
+
+            ESP_LOGI("watermeter", "Pulse! Total: %d | %.0f L", 
+                     id(pulse_count_total), id(watermeter_value));
+
+  # Leak alert — visible in HA as moisture sensor, use for automations/notifications
+  - platform: template
+    name: "Leak Alert"
+    id: sensor_leak_alert
+    device_class: moisture
+    lambda: 'return id(leak_detected);'
+
+sensor:
+  # --- Core ---
+  - platform: template
+    name: "Watermeter Value"
+    id: sensor_watermeter_value
+    unit_of_measurement: "L"
+    icon: "mdi:water"
+    accuracy_decimals: 0
+    state_class: total_increasing
+    device_class: water
+    lambda: 'return id(watermeter_value);'
+    update_interval: 10s
+
+  - platform: template
+    name: "Watermeter Value m³"
+    id: sensor_watermeter_value_m3
+    unit_of_measurement: "m³"
+    icon: "mdi:water"
+    accuracy_decimals: 3
+    state_class: total_increasing
+    device_class: water
+    lambda: 'return id(watermeter_value) / 1000.0;'
+    update_interval: 10s
+
+  - platform: template
+    name: "Watermeter Pulse Count"
+    id: sensor_pulse_count
+    icon: "mdi:counter"
+    accuracy_decimals: 0
+    lambda: 'return id(pulse_count_total);'
+    update_interval: 10s
+
+  # --- Flow rate (updates every 60s, counts pulses in that window) ---
+  - platform: template
+    name: "Water Used Last Minute"
+    id: sensor_flow_rate
+    unit_of_measurement: "L/min"
+    icon: "mdi:water-pump"
+    accuracy_decimals: 1
+    update_interval: 60s
+    lambda: |-
+      float flow = id(pulse_count_interval) * id(watermeter_factor);
+      id(pulse_count_interval) = 0;
+
+      // Update peak flow
+      if (flow > id(peak_flow)) {
+        id(peak_flow) = flow;
+        id(sensor_peak_flow).publish_state(flow);
+      }
+
+      // Leak detection: count consecutive minutes with flow
+      if (flow > 0) {
+        id(leak_minutes_flowing) += 1;
+      } else {
+        id(leak_minutes_flowing) = 0;
+        if (id(leak_detected)) {
+          id(leak_detected) = false;
+          id(sensor_leak_alert).publish_state(false);
+          ESP_LOGI("watermeter", "Flow stopped - leak alert cleared");
+        }
+      }
+      if (id(leak_minutes_flowing) >= id(set_leak_threshold).state && !id(leak_detected)) {
+        id(leak_detected) = true;
+        id(sensor_leak_alert).publish_state(true);
+        ESP_LOGW("watermeter", "LEAK DETECTED - continuous flow for %d minutes!", id(leak_minutes_flowing));
+      }
+
+      return flow;
+
+  - platform: template
+    name: "Peak Flow Rate"
+    id: sensor_peak_flow
+    unit_of_measurement: "L/min"
+    icon: "mdi:speedometer"
+    accuracy_decimals: 1
+    lambda: 'return id(peak_flow);'
+    update_interval: 60s
+
+  # --- Period usage ---
+  - platform: template
+    name: "Water Usage Today"
+    id: sensor_usage_today
+    unit_of_measurement: "L"
+    icon: "mdi:calendar-today"
+    accuracy_decimals: 0
+    lambda: 'return id(usage_today);'
+    update_interval: 30s
+
+  - platform: template
+    name: "Water Usage This Week"
+    id: sensor_usage_week
+    unit_of_measurement: "L"
+    icon: "mdi:calendar-week"
+    accuracy_decimals: 0
+    lambda: 'return id(usage_week);'
+    update_interval: 30s
+
+  - platform: template
+    name: "Water Usage This Month"
+    id: sensor_usage_month
+    unit_of_measurement: "L"
+    icon: "mdi:calendar-month"
+    accuracy_decimals: 0
+    lambda: 'return id(usage_month);'
+    update_interval: 30s
+
+  - platform: template
+    name: "Water Usage This Year"
+    id: sensor_usage_year
+    unit_of_measurement: "L"
+    icon: "mdi:calendar"
+    accuracy_decimals: 0
+    lambda: 'return id(usage_year);'
+    update_interval: 30s
+
+  # --- Diagnostics ---
+  - platform: wifi_signal
+    name: "WiFi Signal"
+    update_interval: 60s
+
+  - platform: uptime
+    name: "Uptime"
+    update_interval: 60s
+
+number:
+  # Set the total meter value (e.g. to match your physical meter reading)
+  - platform: template
+    name: "Set Watermeter Value"
+    id: set_watermeter_value
+    icon: "mdi:water-plus"
+    unit_of_measurement: "L"
+    min_value: 0
+    max_value: 9999999
+    step: 1
+    mode: box
+    lambda: 'return id(watermeter_value);'
+    set_action:
+      - lambda: |-
+          id(watermeter_value) = x;
+          id(sensor_watermeter_value).publish_state(id(watermeter_value));
+          ESP_LOGI("watermeter", "Watermeter value set to %.0f L", x);
+
+  # Use this if your meter needs MULTIPLE rotations per liter
+  # Example: set to 2 if 2 rotations = 1 liter
+  # Leave at 1 if 1 rotation = 1 liter
+  - platform: template
+    name: "Pulses Per Liter"
+    id: set_pulses_per_liter
+    icon: "mdi:counter"
+    unit_of_measurement: "pulses/L"
+    min_value: 1
+    max_value: 100
+    step: 1
+    mode: box
+    initial_value: 1
+    optimistic: true
+    on_value:
+      then:
+        - lambda: |-
+            if (x > 0) {
+              id(watermeter_factor) = 1.0 / x;
+              ESP_LOGI("watermeter", "%.0f pulses = 1 liter (factor: %.4f L/pulse)", x, id(watermeter_factor));
+            }
+
+  # Use this if ONE rotation equals MULTIPLE liters
+  # Example: set to 10 if 1 rotation = 10 liters
+  # Leave at 1 if 1 rotation = 1 liter
+  - platform: template
+    name: "Liters Per Pulse"
+    id: set_liters_per_pulse
+    icon: "mdi:water"
+    unit_of_measurement: "L/pulse"
+    min_value: 1
+    max_value: 100
+    step: 1
+    mode: box
+    initial_value: 1
+    optimistic: true
+    on_value:
+      then:
+        - lambda: |-
+            id(watermeter_factor) = x;
+            ESP_LOGI("watermeter", "1 pulse = %.0f liters", x);
+
+  # How many consecutive minutes of flow before a leak is flagged
+  - platform: template
+    name: "Leak Detection Threshold (min)"
+    id: set_leak_threshold
+    icon: "mdi:timer-alert"
+    min_value: 10
+    max_value: 480
+    step: 5
+    mode: box
+    initial_value: 60
+    optimistic: true
+
+button:
+  - platform: template
+    name: "Reset Peak Flow"
+    icon: "mdi:speedometer"
+    on_press:
+      - lambda: |-
+          id(peak_flow) = 0;
+          id(sensor_peak_flow).publish_state(0);
+          ESP_LOGI("watermeter", "Peak flow reset");
+
+  - platform: template
+    name: "Reset Leak Alert"
+    icon: "mdi:water-alert"
+    on_press:
+      - lambda: |-
+          id(leak_detected) = false;
+          id(leak_minutes_flowing) = 0;
+          id(sensor_leak_alert).publish_state(false);
+          ESP_LOGI("watermeter", "Leak alert reset");
+
+  - platform: template
+    name: "Reset Daily Usage"
+    icon: "mdi:calendar-today"
+    on_press:
+      - lambda: |-
+          id(usage_today) = 0;
+          id(sensor_usage_today).publish_state(0);
+
+  - platform: template
+    name: "Reset Weekly Usage"
+    icon: "mdi:calendar-week"
+    on_press:
+      - lambda: |-
+          id(usage_week) = 0;
+          id(sensor_usage_week).publish_state(0);
+
+  - platform: template
+    name: "Reset Monthly Usage"
+    icon: "mdi:calendar-month"
+    on_press:
+      - lambda: |-
+          id(usage_month) = 0;
+          id(sensor_usage_month).publish_state(0);
+
+  - platform: template
+    name: "Reset Yearly Usage"
+    icon: "mdi:calendar"
+    on_press:
+      - lambda: |-
+          id(usage_year) = 0;
+          id(sensor_usage_year).publish_state(0);
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: "IP Address"
+    ssid:
+      name: "WiFi SSID"
+    mac_address:
+      name: "MAC Address"
+
+  - platform: version
+    name: "ESPHome Version"
